@@ -1,17 +1,17 @@
 package info.mmpa.pipeblocker.test;
 
 import info.mmpa.pipeblocker.PipeBlocker;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
+import org.junit.BeforeClass;
+import org.junit.Test;
 
 import java.io.*;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.Assert.*;
 
 public class ObjectStreamTest {
-    @BeforeAll
+    @BeforeClass
     public static void applyFilter() {
         PipeBlocker.apply();
     }

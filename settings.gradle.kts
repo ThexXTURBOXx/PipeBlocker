@@ -23,9 +23,6 @@ plugins {
   id("org.gradle.toolchains.foojay-resolver-convention") version "0.4.0"
 }
 
-include("java9")
 include("dummy")
 include("common")
-include("forge17_112")
-include("fabric")
-include("javaagent")
+include("legacy_forge")

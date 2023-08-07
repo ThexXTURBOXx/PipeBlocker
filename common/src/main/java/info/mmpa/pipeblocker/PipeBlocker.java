@@ -9,17 +9,20 @@ import java.io.*;
 import java.net.URL;
 import java.util.*;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 public class PipeBlocker {
     private static PipeBlockerLogger LOGGER = new PipeBlockerStdoutLogger();
+
+    static {
+        PipeBlocker.chooseBestLogger();
+    }
 
     private static final List<Pattern> allowedPatterns = new ArrayList<>();
     private static final List<Pattern> rejectedPatterns = new ArrayList<>();
     private static final List<Pattern> softAllowedPatterns = new ArrayList<>();
     private static final HashMap<Class<?>, CheckStatus> cache = new HashMap<>();
 
-    private static final Set<Class<?>> REJECTED_CLASSES = Collections.synchronizedSet(new HashSet<>());
+    private static final Set<Class<?>> REJECTED_CLASSES = Collections.synchronizedSet(new HashSet<Class<?>>());
 
     private static int numEntriesLoaded = 0;
 
@@ -75,8 +78,26 @@ public class PipeBlocker {
         }
     }
 
+    public static PipeBlockerLogger detectLogger() {
+        try {
+            Class.forName("org.apache.logging.log4j.Logger");
+            Class.forName("org.apache.logging.log4j.LogManager");
+            return new PipeBlockerLog4jLogger();
+        } catch (ClassNotFoundException ignored) {
+        }
+
+        try {
+            Class.forName("java.util.logging.Logger");
+            return new PipeBlockerJavaLogger();
+        } catch (ClassNotFoundException ignored) {
+        }
+
+        // Should never reach here
+        return new PipeBlockerStdoutLogger();
+    }
+
     public static void chooseBestLogger() {
-        LOGGER = PipeBlockerLogger.detectLogger();
+        LOGGER = detectLogger();
     }
 
     public static void useStdOut() {
@@ -134,15 +155,15 @@ public class PipeBlocker {
         }
     }
 
-    private static Stream<Class<?>> inheritanceStream(Class<?> clz) {
+    private static Set<Class<?>> inheritanceStream(Class<?> clz) {
         if(clz == null)
-            return Stream.empty();
-        Stream.Builder<Class<?>> streamBuilder = Stream.builder();
+            return Collections.emptySet();
+        Set<Class<?>> streamBuilder = new HashSet<>();
         while(clz != null) {
             streamBuilder.add(clz);
             clz = clz.getSuperclass();
         }
-        return streamBuilder.build();
+        return streamBuilder;
     }
 
     private static boolean isMatchingName(String name, List<Pattern> patterns) {
@@ -154,10 +175,16 @@ public class PipeBlocker {
         return false;
     }
 
+    private static boolean checkPatterns(Class<?> clazz, List<Pattern> patterns) {
+        Set<Class<?>> set = inheritanceStream(clazz);
+        for (Class<?> c : set) if (PipeBlocker.isMatchingName(clazz.getCanonicalName(), patterns)) return true;
+        return false;
+    }
+
     private static FilterMatchType matchClass(Class<?> clazz) {
-        if (inheritanceStream(clazz).map(Class::getCanonicalName).anyMatch(n -> PipeBlocker.isMatchingName(n, rejectedPatterns)))
+        if (checkPatterns(clazz, rejectedPatterns))
             return FilterMatchType.REJECT;
-        if (inheritanceStream(clazz).map(Class::getCanonicalName).anyMatch(n -> PipeBlocker.isMatchingName(n, allowedPatterns)))
+        if (checkPatterns(clazz, allowedPatterns))
             return FilterMatchType.ALLOW;
         if (PipeBlocker.isMatchingName(clazz.getCanonicalName(), softAllowedPatterns))
             return FilterMatchType.SOFT_ALLOW;
@@ -202,7 +229,6 @@ public class PipeBlocker {
         return status;
     }
 
-
     public static void apply() {
         if (initialized) {
             throw new RuntimeException("PipeBlocker is already initialized!");
@@ -226,10 +252,8 @@ public class PipeBlocker {
         loadFilter();
         String javaVersion = System.getProperties().getProperty("java.specification.version");
         String className;
-        if ("1.8".equals(javaVersion)) {
-            className = "info.mmpa.pipeblocker.java8.FilterSetter";
-        } else if (javaVersion.chars().allMatch(Character::isDigit) && Integer.parseInt(javaVersion) > 8) {
-            className = "info.mmpa.pipeblocker.java9.FilterSetter";
+        if ("1.8".equals(javaVersion) || "1.7".equals(javaVersion)) {
+            className = "info.mmpa.pipeblocker.java7.FilterSetter";
         } else {
             System.err.println("Unsupported java version: " + javaVersion);
             throw new RuntimeException("Unsupported java version: " + javaVersion);
